@@ -5,7 +5,7 @@ Local version of the workflow from `piper_demo.ipynb`.
 ## Setup
 
 ```bash
-cd /home/tyuukau/work/exp/tts/train/piper
+cd /home/tyuukau/work/exp/tts/train/train-piper
 uv sync --python 3.11
 uv run python train_piper.py setup
 uv run python train_piper.py doctor
@@ -17,21 +17,31 @@ tools.
 
 ## Dataset
 
-The default training set is the filtered ThuaThienHue v2 set:
+Input schema required by `--source-csv`:
 
-```bash
-uv run python train_piper.py dataset-summary
-uv run python train_piper.py prepare-metadata
+- format: UTF-8 CSV using `|` as the delimiter
+- required header columns: `filename` and `text`
+- `filename`: audio file path relative to `--audio-dir`
+- `text`: normalized transcript to train on
+- rows with an empty `filename` or `text` are skipped
+- rows whose audio file does not exist under `--audio-dir` are skipped with a warning
+
+Example source CSV:
+
+```csv
+filename|text
+wavs/0001.wav|Xin chao tat ca moi nguoi
+wavs/0002.wav|Hom nay troi dep
 ```
 
-Current summary:
+`prepare-metadata` converts the source CSV into Piper metadata at
+`--metadata-csv`. Piper metadata has no header and contains exactly two
+pipe-delimited columns:
 
-- source metadata: `/home/tyuukau/datasets/thuathienhue/metadata_monos_cleared_v2.csv`
-- Piper metadata: `data/thuathienhue_v2_piper_metadata.csv`
-- audio root: `/home/tyuukau/datasets/thuathienhue`
-- valid samples: `1417`
-- missing audio: `0`
-- total duration: `72.65` minutes / `1.211` hours
+```csv
+wavs/0001.wav|Xin chao tat ca moi nguoi
+wavs/0002.wav|Hom nay troi dep
+```
 
 ## Train
 
@@ -52,6 +62,80 @@ Defaults:
 - accelerator: `auto`
 - cleaned checkpoint: `checkpoints/hfc_male_medium.cleaned.ckpt`
 - Lightning log dir: `lightning_logs_v2`
+
+## Arguments
+
+Global:
+
+- `--debug`: enable debug-level logging for the helper script
+
+Common dataset/checkpoint arguments used by `setup`, `prepare-metadata`,
+`dataset-summary`, `download-checkpoint`, `clean-checkpoint`, `train`,
+`tensorboard`, and `export`:
+
+- `--source-csv PATH`: source metadata CSV with `filename|text` columns
+- `--audio-dir PATH`: directory containing audio files referenced by `filename`
+- `--metadata-csv PATH`: generated Piper metadata CSV
+- `--checkpoint PATH`: downloaded pretrained checkpoint
+- `--clean-checkpoint PATH`: checkpoint rewritten for the local Piper version
+- `--config-path PATH`: generated Piper voice config JSON
+- `--cache-dir PATH`: Piper preprocessing cache directory
+- `--log-dir PATH`: Lightning/TensorBoard/W&B log directory
+
+Setup and checkpoint commands:
+
+- `setup --force`: redownload the pretrained checkpoint before cleaning it
+- `download-checkpoint --force`: redownload even if the checkpoint already exists
+
+Training arguments:
+
+- `--voice-name NAME`: Piper voice name used for config/checkpoint paths
+- `--espeak-voice VOICE`: eSpeak voice code, default `vi`
+- `--sample-rate HZ`: target audio sample rate, default `22050`
+- `--batch-size N`: training batch size, default `16`
+- `--num-workers N`: data loader worker count, default `2`
+- `--max-epochs N`: maximum training epochs, default `4000`
+- `--accelerator auto|gpu|cpu`: trainer accelerator, default `auto`
+- `--devices VALUE`: Lightning devices value, default `1`
+- `--log-every-n-steps N`: Lightning logging cadence, default `1`
+- `--checkpoint-every-n-epochs N`: save interval; use `0` to disable periodic saves
+- `--checkpoint-dir PATH`: root directory for training checkpoints
+- `--no-restore-checkpoint`: start without loading the pretrained checkpoint
+- `--fast-dev-run`: run Lightning's one-batch smoke test
+- `--dry-run`: print the training command without starting training
+- `--detect-anomaly`: enable PyTorch autograd anomaly detection
+
+Debug logging and W&B arguments:
+
+- `--log-grad-every-n-steps N`: gradient stats cadence; use `0` to disable
+- `--log-param-hist-every-n-epochs N`: parameter histogram cadence; default `0`
+- `--log-mel-every-n-epochs N`: validation mel image cadence
+- `--max-debug-audio-examples N`: validation audio examples to log
+- `--wandb`: enable W&B alongside TensorBoard
+- `--wandb-project NAME`: W&B project, default `nghitts-piper`
+- `--wandb-entity NAME`: optional W&B entity/team
+- `--wandb-run-name NAME`: optional W&B run name
+- `--wandb-tags TAGS`: comma-separated W&B tags, default `piper,tts`
+- `--wandb-mode online|offline`: W&B mode, default `online`
+- `--wandb-log-model`: upload checkpoints as W&B artifacts
+- `--wandb-watch-log-freq N`: W&B watch logging frequency
+
+TensorBoard arguments:
+
+- `--host HOST`: bind address, default `127.0.0.1`
+- `--port PORT`: bind port, default `6006`
+
+Export arguments:
+
+- `--export-checkpoint PATH`: required checkpoint to export
+- `--output-onnx PATH`: output ONNX model path
+
+Synthesis arguments:
+
+- `--output-onnx PATH`: ONNX model path to load
+- `--wav-out PATH`: output WAV file
+- `--text TEXT`: text to synthesize
+- `--use-cuda`: use CUDA for inference when available
 
 When the NVIDIA driver is visible to PyTorch, `auto` uses `gpu`. Otherwise, it
 falls back to `cpu`. The helper patches Piper's Lightning module to log
@@ -114,6 +198,30 @@ Useful debug toggles:
 - `--wandb-log-model`: upload checkpoints as W&B artifacts
 
 ## Checkpoints
+
+The pretrained warm-start checkpoints come from the Rhasspy Piper checkpoints
+dataset on Hugging Face:
+
+- male: `https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/hfc_male/medium/epoch%3D2785-step%3D2128064.ckpt`
+- female: `https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/hfc_female/medium/epoch%3D2868-step%3D1575188.ckpt`
+
+The helper downloads the male checkpoint by default to
+`checkpoints/hfc_male_medium.ckpt`. To start from the female checkpoint,
+download it manually and pass both checkpoint paths through setup/training:
+
+```bash
+mkdir -p checkpoints
+wget -O checkpoints/hfc_female_medium.ckpt \
+  "https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/hfc_female/medium/epoch%3D2868-step%3D1575188.ckpt"
+
+uv run python train_piper.py clean-checkpoint \
+  --checkpoint checkpoints/hfc_female_medium.ckpt \
+  --clean-checkpoint checkpoints/hfc_female_medium.cleaned.ckpt
+
+uv run python train_piper.py train \
+  --checkpoint checkpoints/hfc_female_medium.ckpt \
+  --clean-checkpoint checkpoints/hfc_female_medium.cleaned.ckpt
+```
 
 Training saves all periodic checkpoints plus `last.ckpt`:
 
