@@ -1,0 +1,30 @@
+[project]
+name = "piper-training"
+version = "0.1.0"
+description = "Local Piper TTS training environment"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "cmake>=3.18,<4",
+    "ninja>=1,<2",
+    "onnx>=1,<2",
+    "onnxscript>=0.3",
+    "piper-tts[train]",
+    "scikit-build<1",
+    "setuptools>=70,<81",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
+    "wandb>=0.18,<1",
+    "wheel>=0.43",
+]
+
+[tool.uv.sources]
+piper-tts = { path = "./piper1-gpl", editable = true }
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
